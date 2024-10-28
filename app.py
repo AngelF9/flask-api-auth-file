@@ -6,7 +6,15 @@ from flask import (
     render_template,
     request,
     session,
+    abort,
 )
+
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
+import jwt
+import os
+
 
 # SQLAlchemy
 from flask_sqlalchemy import SQLAlchemy
@@ -18,6 +26,7 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = (
     "mysql+pymysql://root:new_password@localhost/flask_api"
 )
+app.config['SECRET_KEY'] = 'your_secret_key'
 
 # initialize the SQLAlchemy object
 db = SQLAlchemy(app)
@@ -30,8 +39,12 @@ class User(db.Model):
     password_hash = db.Column(db.String(128), nullable=False)  # Storing hashed password
 
     # add function to generate hashed password
+    def set_password(self, password):
+        self.password = generate_password_hash(password)
 
     # add function to check the hashed password again user input
+    def check_password(self, password):
+        return check_password_hash(self.password, password)
 
 
 # --- Task 2: Error Handling ---
@@ -81,6 +94,42 @@ def server_error(error):
 @app.route("/error")
 def error_route():
     abort(404)
+
+
+# handle 403 missing or invalid tokens error
+@app.errorhandler(403)
+def forbidden(error):
+    return jsonify({"error": "Forbidden", "msg": "You do not have permission to access this resource."}), 403
+
+
+# --- Task 3: Authentication ---
+
+#Login route to generate JWT token
+@app.route('/login', methods=['POST'])
+def login():
+    auth = request.get_json()
+   # user = User.query.filter_by(username=auth['username']).first()
+    user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
+    if user and check_password_hash(user.password, auth['password']):
+        token = jwt.encode({'username': user.username}, app.config['SECRET_KEY'], algorithms=['HS256'])
+        return jsonify({'token': token})
+    return jsonify({'message': 'Invalid credentials!'}), 401
+
+#protected route
+@app.route('/protected', methods=['GET'])
+def protected():
+        token = request.headers.get('Authorization')
+        if not token:
+             return jsonify({'message': 'Token is missing!'}), 403
+        
+        try: 
+             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+             return jsonify({'message': f'Welcome, {data["username"]}!'})
+        except jwt.ExpiredSignatureError: 
+            return jsonify({'message': 'Token has expired!'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'message': 'Invalid token!'}), 401
+        
 
 
 if __name__ == "__main__":

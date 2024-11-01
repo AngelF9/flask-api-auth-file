@@ -24,12 +24,21 @@ app = Flask(__name__)
 
 # configure MySQL database connection
 app.config["SQLALCHEMY_DATABASE_URI"] = (
-    "mysql+pymysql://root:new_password@localhost/flask_api"
+    "mysql+pymysql://new_user:testing123@localhost/user_db"
 )
-app.config['SECRET_KEY'] = 'your_secret_key'
+app.config['SECRET_KEY'] = 'cpsc-449'
+
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 #1 MB
+app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.gif', '.txt']
+app.config['UPLOAD_PATH'] = 'uploads'
+
+os.makedirs(app.config['UPLOAD_PATH'], exist_ok=True) #Makes a folder in project directory called 'uploads'
 
 # initialize the SQLAlchemy object
 db = SQLAlchemy(app)
+
+#with app.app_context():
+#    db.create_all()
 
 
 # Define user model
@@ -101,6 +110,10 @@ def error_route():
 def forbidden(error):
     return jsonify({"error": "Forbidden", "msg": "You do not have permission to access this resource."}), 403
 
+@app.errorhandler(413)
+def payload_too_large(error):
+    return jsonify({"error": "File size exceeds the max limit"}), 413
+
 
 # --- Task 3: Authentication ---
 
@@ -108,12 +121,18 @@ def forbidden(error):
 @app.route('/login', methods=['POST'])
 def login():
     auth = request.get_json()
+    print("Authorized data received: ", auth)
    # user = User.query.filter_by(username=auth['username']).first()
-    user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
-    if user and check_password_hash(user.password, auth['password']):
-        token = jwt.encode({'username': user.username}, app.config['SECRET_KEY'], algorithms=['HS256'])
+   # user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
+    #if user and check_password_hash(user.password, auth['password']):
+    if auth and auth.get('username') == "testuser" and auth.get('password') == "testpass":
+       # token = jwt.encode({'username': user.username}, app.config['SECRET_KEY'], algorithms=['HS256'])
+        token = jwt.encode({'username': auth['username']}, app.config['SECRET_KEY'], algorithm='HS256')
+        print("Token generated: ", token)
         return jsonify({'token': token})
-    return jsonify({'message': 'Invalid credentials!'}), 401
+    else:
+     print("Invalid credentials")
+     return jsonify({'message': 'Invalid credentials!'}), 401
 
 #protected route
 @app.route('/protected', methods=['GET'])
@@ -124,13 +143,52 @@ def protected():
         
         try: 
              data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+             print("Token received in header:", token)  # Debug: Print token received
              return jsonify({'message': f'Welcome, {data["username"]}!'})
         except jwt.ExpiredSignatureError: 
+            print("Token expired")  # Debug
             return jsonify({'message': 'Token has expired!'}), 401
         except jwt.InvalidTokenError:
+            print("Invalid token")  # Debug
             return jsonify({'message': 'Invalid token!'}), 401
         
 
+# --- Task 4 File Handling ---
+
+#file submission form
+@app.route('/uploads')
+def upload():
+    return '''
+    <html>
+    <body>
+    <h1>Upload a file</h1>
+    <form action="/sendFile" method="POST" enctype="multipart/form-data">
+        <input type="file" name="file"/><br>
+        <input type="submit" value="Upload"/>
+    </form>
+    </body>
+    </html>
+    '''
+
+#Upload file endpoint
+@app.route('/sendFile', methods=['POST'])
+def sendFile():
+
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+    
+    uploaded_file = request.files['file']
+    if uploaded_file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    #Secure and validate the filename
+    filename = secure_filename(uploaded_file.filename)
+    if os.path.splitext(filename)[1] not in app.config['UPLOAD_EXTENSIONS']:
+        return jsonify({"error": "Invalid file type"}), 400
+    
+    #Save the file
+    uploaded_file.save(os.path.join(app.config['UPLOAD_PATH'], filename))
+    return jsonify({"message": "File successfully uploaded", "filename": filename}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)

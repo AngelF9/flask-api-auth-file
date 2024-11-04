@@ -1,43 +1,43 @@
+import os
+
+import jwt
 from flask import (
     Flask,
+    abort,
     jsonify,
     make_response,
     redirect,
     render_template,
     request,
     session,
-    abort,
 )
-
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import check_password_hash, generate_password_hash
-from werkzeug.utils import secure_filename
-import jwt
-import os
-
 
 # SQLAlchemy
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 # create instance of Flask class
 app = Flask(__name__)
 
 # configure MySQL database connection
 app.config["SQLALCHEMY_DATABASE_URI"] = (
-    "mysql+pymysql://new_user:testing123@localhost/user_db"
+    "mysql+pymysql://root:new_password@localhost/flask_api"
 )
-app.config['SECRET_KEY'] = 'cpsc-449'
+app.config["SECRET_KEY"] = "cpsc-449"
 
-app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 #1 MB
-app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.gif', '.txt']
-app.config['UPLOAD_PATH'] = 'uploads'
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
+app.config["UPLOAD_EXTENSIONS"] = [".jpg", ".png", ".gif", ".txt"]
+app.config["UPLOAD_PATH"] = "uploads"
 
-os.makedirs(app.config['UPLOAD_PATH'], exist_ok=True) #Makes a folder in project directory called 'uploads'
+os.makedirs(
+    app.config["UPLOAD_PATH"], exist_ok=True
+)  # Makes a folder in project directory called 'uploads'
 
 # initialize the SQLAlchemy object
 db = SQLAlchemy(app)
 
-#with app.app_context():
+# with app.app_context():
 #    db.create_all()
 
 
@@ -55,6 +55,26 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password, password)
 
+
+class Item(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.String(250), nullable=False)
+    is_public = db.Column(db.Boolean, default=True)
+
+
+with app.app_context():
+    db.create_all()
+    Item.query.delete()
+    db.session.commit
+
+    sample_items = [
+        Item(name="Pierce", description="math major"),
+        Item(name="Hermann", description="english major"),
+        Item(name="Nikos", description="biology major"),
+    ]
+    db.session.add_all(sample_items)
+    db.session.commit()
 
 # --- Task 2: Error Handling ---
 
@@ -108,7 +128,16 @@ def error_route():
 # handle 403 missing or invalid tokens error
 @app.errorhandler(403)
 def forbidden(error):
-    return jsonify({"error": "Forbidden", "msg": "You do not have permission to access this resource."}), 403
+    return (
+        jsonify(
+            {
+                "error": "Forbidden",
+                "msg": "You do not have permission to access this resource.",
+            }
+        ),
+        403,
+    )
+
 
 @app.errorhandler(413)
 def payload_too_large(error):
@@ -117,48 +146,57 @@ def payload_too_large(error):
 
 # --- Task 3: Authentication ---
 
-#Login route to generate JWT token
-@app.route('/login', methods=['POST'])
+
+# Login route to generate JWT token
+@app.route("/login", methods=["POST"])
 def login():
     auth = request.get_json()
     print("Authorized data received: ", auth)
-   # user = User.query.filter_by(username=auth['username']).first()
-   # user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
-    #if user and check_password_hash(user.password, auth['password']):
-    if auth and auth.get('username') == "testuser" and auth.get('password') == "testpass":
-       # token = jwt.encode({'username': user.username}, app.config['SECRET_KEY'], algorithms=['HS256'])
-        token = jwt.encode({'username': auth['username']}, app.config['SECRET_KEY'], algorithm='HS256')
+    # user = User.query.filter_by(username=auth['username']).first()
+    # user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
+    # if user and check_password_hash(user.password, auth['password']):
+    if (
+        auth
+        and auth.get("username") == "testuser"
+        and auth.get("password") == "testpass"
+    ):
+        # token = jwt.encode({'username': user.username}, app.config['SECRET_KEY'], algorithms=['HS256'])
+        token = jwt.encode(
+            {"username": auth["username"]}, app.config["SECRET_KEY"], algorithm="HS256"
+        )
         print("Token generated: ", token)
-        return jsonify({'token': token})
+        return jsonify({"token": token})
     else:
-     print("Invalid credentials")
-     return jsonify({'message': 'Invalid credentials!'}), 401
+        print("Invalid credentials")
+        return jsonify({"message": "Invalid credentials!"}), 401
 
-#protected route
-@app.route('/protected', methods=['GET'])
+
+# protected route
+@app.route("/protected", methods=["GET"])
 def protected():
-        token = request.headers.get('Authorization')
-        if not token:
-             return jsonify({'message': 'Token is missing!'}), 403
-        
-        try: 
-             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-             print("Token received in header:", token)  # Debug: Print token received
-             return jsonify({'message': f'Welcome, {data["username"]}!'})
-        except jwt.ExpiredSignatureError: 
-            print("Token expired")  # Debug
-            return jsonify({'message': 'Token has expired!'}), 401
-        except jwt.InvalidTokenError:
-            print("Invalid token")  # Debug
-            return jsonify({'message': 'Invalid token!'}), 401
-        
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"message": "Token is missing!"}), 403
+
+    try:
+        data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+        print("Token received in header:", token)  # Debug: Print token received
+        return jsonify({"message": f'Welcome, {data["username"]}!'})
+    except jwt.ExpiredSignatureError:
+        print("Token expired")  # Debug
+        return jsonify({"message": "Token has expired!"}), 401
+    except jwt.InvalidTokenError:
+        print("Invalid token")  # Debug
+        return jsonify({"message": "Invalid token!"}), 401
+
 
 # --- Task 4 File Handling ---
 
-#file submission form
-@app.route('/uploads')
+
+# file submission form
+@app.route("/uploads")
 def upload():
-    return '''
+    return """
     <html>
     <body>
     <h1>Upload a file</h1>
@@ -168,27 +206,40 @@ def upload():
     </form>
     </body>
     </html>
-    '''
+    """
 
-#Upload file endpoint
-@app.route('/sendFile', methods=['POST'])
+
+# Upload file endpoint
+@app.route("/sendFile", methods=["POST"])
 def sendFile():
 
-    if 'file' not in request.files:
+    if "file" not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
-    
-    uploaded_file = request.files['file']
-    if uploaded_file.filename == '':
+
+    uploaded_file = request.files["file"]
+    if uploaded_file.filename == "":
         return jsonify({"error": "No file selected"}), 400
-    
-    #Secure and validate the filename
+
+    # Secure and validate the filename
     filename = secure_filename(uploaded_file.filename)
-    if os.path.splitext(filename)[1] not in app.config['UPLOAD_EXTENSIONS']:
+    if os.path.splitext(filename)[1] not in app.config["UPLOAD_EXTENSIONS"]:
         return jsonify({"error": "Invalid file type"}), 400
-    
-    #Save the file
-    uploaded_file.save(os.path.join(app.config['UPLOAD_PATH'], filename))
+
+    # Save the file
+    uploaded_file.save(os.path.join(app.config["UPLOAD_PATH"], filename))
     return jsonify({"message": "File successfully uploaded", "filename": filename}), 200
+
+
+# --- TASK 5 ---
+@app.route("/items", methods=["GET"])
+def get_public_items():
+    items = Item.query.filter_by(is_public=True).all()
+    items_list = [
+        {"id": item.id, "name": item.name, "description": item.description}
+        for item in items
+    ]
+    return jsonify(items_list)
+
 
 if __name__ == "__main__":
     app.run(debug=True)

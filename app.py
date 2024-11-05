@@ -152,6 +152,8 @@ def payload_too_large(error):
 # --- Task 3: Authentication ---
 
 
+
+
 # Login route to generate JWT token
 @app.route("/login", methods=["POST"])
 def login():
@@ -174,9 +176,15 @@ def login():
 # protected route
 @app.route("/protected", methods=["GET"])
 def protected():
-    token = request.headers.get("Authorization")
-    if not token:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
         return jsonify({"message": "Token is missing!"}), 403
+    
+     # Split to get the token part after "Bearer "
+    try:
+        token = auth_header.split(" ")[1]  # Extracts the token part
+    except IndexError:
+            return jsonify({"message": "Token format is invalid!"}), 401
 
     try:
         data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])

@@ -1,6 +1,6 @@
 import os
-
 import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from flask import (
     Flask,
     abort,
@@ -21,39 +21,44 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 # configure MySQL database connection
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    "mysql+pymysql://root:new_password@localhost/flask_api"
-)
+app.config["SQLALCHEMY_DATABASE_URI"] = ("mysql+pymysql://new_user:testing123@localhost/user_db") #Sam's db url for testing only
+#app.config["SQLALCHEMY_DATABASE_URI"] = ("mysql+pymysql://root:new_password@localhost/flask_api") #Angel's configuration
 app.config["SECRET_KEY"] = "cpsc-449"
 
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 app.config["UPLOAD_EXTENSIONS"] = [".jpg", ".png", ".gif", ".txt"]
 app.config["UPLOAD_PATH"] = "uploads"
 
-os.makedirs(
-    app.config["UPLOAD_PATH"], exist_ok=True
-)  # Makes a folder in project directory called 'uploads'
+os.makedirs(app.config["UPLOAD_PATH"], exist_ok=True)  # Makes a folder in project directory called 'uploads'
 
 # initialize the SQLAlchemy object
 db = SQLAlchemy(app)
-
-# with app.app_context():
-#    db.create_all()
-
 
 # Define user model
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)  # Storing hashed password
+    password_hash = db.Column(db.String(512), nullable=False)  # Storing hashed password
 
     # add function to generate hashed password
     def set_password(self, password):
-        self.password = generate_password_hash(password)
+        self.password_hash = generate_password_hash(password)
 
     # add function to check the hashed password again user input
     def check_password(self, password):
-        return check_password_hash(self.password, password)
+        return check_password_hash(self.password_hash, password)
+    
+with app.app_context():
+    db.create_all()
+    User.query.delete()
+    db.session.commit()
+
+    #Create a user
+    test_user = User(username='testuser')
+    test_user.set_password('testpass')
+    db.session.add(test_user)
+    db.session.commit()
+
 
 
 class Item(db.Model):
@@ -66,7 +71,7 @@ class Item(db.Model):
 with app.app_context():
     db.create_all()
     Item.query.delete()
-    db.session.commit
+    db.session.commit()
 
     sample_items = [
         Item(name="Pierce", description="math major"),
@@ -152,22 +157,17 @@ def payload_too_large(error):
 def login():
     auth = request.get_json()
     print("Authorized data received: ", auth)
-    # user = User.query.filter_by(username=auth['username']).first()
+    user = User.query.filter_by(username=auth.get("username")).first()
     # user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
-    # if user and check_password_hash(user.password, auth['password']):
-    if (
-        auth
-        and auth.get("username") == "testuser"
-        and auth.get("password") == "testpass"
-    ):
-        # token = jwt.encode({'username': user.username}, app.config['SECRET_KEY'], algorithms=['HS256'])
-        token = jwt.encode(
-            {"username": auth["username"]}, app.config["SECRET_KEY"], algorithm="HS256"
-        )
-        print("Token generated: ", token)
+    if user and user.check_password(auth.get("password")):
+  #  if (
+  #      auth
+  #      and auth.get("username") == "testuser"
+  #      and auth.get("password") == "testpass"
+  #  ):
+        token = jwt.encode({"username": auth["username"]}, app.config["SECRET_KEY"], algorithm="HS256")
         return jsonify({"token": token})
     else:
-        print("Invalid credentials")
         return jsonify({"message": "Invalid credentials!"}), 401
 
 

@@ -2,3 +2,4 @@ virt/
 venv/
 __pycache__/
 uploads/
+query

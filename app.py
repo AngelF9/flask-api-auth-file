@@ -17,13 +17,15 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+
 # create instance of Flask class
 app = Flask(__name__)
+
 
 # configure MySQL database connection
 app.config["SQLALCHEMY_DATABASE_URI"] = ("mysql+pymysql://new_user:testing123@localhost/user_db") #Sam's db url for testing only
 #app.config["SQLALCHEMY_DATABASE_URI"] = ("mysql+pymysql://root:new_password@localhost/flask_api") #Angel's configuration
-app.config["SECRET_KEY"] = "cpsc-449"
+app.config["SECRET_KEY"] = "your_secret_key" #configure it to your liking
 
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 app.config["UPLOAD_EXTENSIONS"] = [".jpg", ".png", ".gif", ".txt"]
@@ -36,50 +38,48 @@ db = SQLAlchemy(app)
 
 # Define user model
 class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(512), nullable=False)  # Storing hashed password
+  id = db.Column(db.Integer, primary_key=True)
+  username = db.Column(db.String(80), unique=True, nullable=False)
+  password_hash = db.Column(db.String(512), nullable=False)  # Storing hashed password 
 
-    # add function to generate hashed password
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    # add function to check the hashed password again user input
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+  # add function to generate hashed password
+  def set_password(self, password):
+      self.password_hash = generate_password_hash(password) 
+      
+  # add function to check the hashed password again user input
+  def check_password(self, password):
+      return check_password_hash(self.password_hash, password)
     
-# with app.app_context():
-#     db.create_all()
-#     User.query.delete()
-#     db.session.commit()
-
-#     #Create a user
-#     test_user = User(username='testuser')
-#     test_user.set_password('testpass')
-#     db.session.add(test_user)
-#     db.session.commit()
+with app.app_context():
+ db.create_all()
+ User.query.delete()
+ db.session.commit() 
+ #Create a user
+ test_user = User(username='testuser')
+ test_user.set_password('testpass')
+ db.session.add(test_user)
+ db.session.commit()
 
 
 
 class Item(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(80), nullable=False)
-    description = db.Column(db.String(250), nullable=False)
-    is_public = db.Column(db.Boolean, default=True)
+ id = db.Column(db.Integer, primary_key=True)
+ name = db.Column(db.String(80), nullable=False)
+ description = db.Column(db.String(250), nullable=False)
+ is_public = db.Column(db.Boolean, default=True)
 
 
-# with app.app_context():
-#     db.create_all()
-#     Item.query.delete()
-#     db.session.commit()
-
-#     sample_items = [
-#         Item(name="Pierce", description="math major"),
-#         Item(name="Hermann", description="english major"),
-#         Item(name="Nikos", description="biology major"),
-#     ]
-#     db.session.add_all(sample_items)
-#     db.session.commit()
+with app.app_context():
+ db.create_all()
+ Item.query.delete()
+ db.session.commit()
+ sample_items = [
+     Item(name="Pierce", description="math major"),
+     Item(name="Hermann", description="english major"),
+     Item(name="Nikos", description="biology major"),
+ ]
+ db.session.add_all(sample_items)
+ db.session.commit()
 
 # --- Task 2: Error Handling ---
 
@@ -143,7 +143,7 @@ def forbidden(error):
         403,
     )
 
-
+#File size too large error
 @app.errorhandler(413)
 def payload_too_large(error):
     return jsonify({"error": "File size exceeds the max limit"}), 413
@@ -152,21 +152,13 @@ def payload_too_large(error):
 # --- Task 3: Authentication ---
 
 
-
-
 # Login route to generate JWT token
 @app.route("/login", methods=["POST"])
 def login():
     auth = request.get_json()
     print("Authorized data received: ", auth)
     user = User.query.filter_by(username=auth.get("username")).first()
-    # user = {'username': 'testuser', 'password': generate_password_hash('testpass')}
     if user and user.check_password(auth.get("password")):
-  #  if (
-  #      auth
-  #      and auth.get("username") == "testuser"
-  #      and auth.get("password") == "testpass"
-  #  ):
         token = jwt.encode({"username": auth["username"]}, app.config["SECRET_KEY"], algorithm="HS256")
         return jsonify({"token": token})
     else:
@@ -180,7 +172,7 @@ def protected():
     if not auth_header:
         return jsonify({"message": "Token is missing!"}), 403
     
-     # Split to get the token part after "Bearer "
+     # Split to get the token part only
     try:
         token = auth_header.split(" ")[1]  # Extracts the token part
     except IndexError:
@@ -188,13 +180,10 @@ def protected():
 
     try:
         data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
-        print("Token received in header:", token)  # Debug: Print token received
         return jsonify({"message": f'Welcome, {data["username"]}!'})
     except jwt.ExpiredSignatureError:
-        print("Token expired")  # Debug
         return jsonify({"message": "Token has expired!"}), 401
     except jwt.InvalidTokenError:
-        print("Invalid token")  # Debug
         return jsonify({"message": "Invalid token!"}), 401
 
 
@@ -233,12 +222,16 @@ def sendFile():
     if os.path.splitext(filename)[1] not in app.config["UPLOAD_EXTENSIONS"]:
         return jsonify({"error": "Invalid file type"}), 400
 
-    # Save the file
+    # Save the file to the upload folder
     uploaded_file.save(os.path.join(app.config["UPLOAD_PATH"], filename))
     return jsonify({"message": "File successfully uploaded", "filename": filename}), 200
 
 
 # --- TASK 5 ---
+
+#public route to allow users to view a list of items
+
+#Also part of task 6 to GET the list of items (READ operation)
 @app.route("/items", methods=["GET"])
 def get_public_items():
     items = Item.query.filter_by(is_public=True).all()
@@ -250,7 +243,7 @@ def get_public_items():
 
 # --- TASK 6 ---
 
-# GET - Get specific item by ID
+# GET - Get specific item by ID (READ Operation)
 @app.route("/items/<int:item_id>", methods=["GET"])
 def get_item(item_id):
     item = Item.query.get_or_404(item_id)
@@ -259,9 +252,10 @@ def get_item(item_id):
         "name": item.name,
         "description": item.description,
         "is_public": item.is_public
-    })
+    }, 
+    )
 
-# POST - Create new item
+# POST - Create new item (CREATE operation)
 @app.route("/items", methods=["POST"])
 def create_item():
     data = request.get_json()
@@ -288,7 +282,7 @@ def create_item():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# PUT - Update existing item
+# PUT - Update existing item (UPDATE Operation)
 @app.route("/items/<int:item_id>", methods=["PUT"])
 def update_item(item_id):
     item = Item.query.get_or_404(item_id)
@@ -313,7 +307,7 @@ def update_item(item_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# DELETE - Delete item
+# DELETE - Delete item (DELETE Operation)
 @app.route("/items/<int:item_id>", methods=["DELETE"])
 def delete_item(item_id):
     item = Item.query.get_or_404(item_id)
@@ -325,6 +319,7 @@ def delete_item(item_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)

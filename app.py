@@ -48,16 +48,16 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
     
-with app.app_context():
-    db.create_all()
-    User.query.delete()
-    db.session.commit()
+# with app.app_context():
+#     db.create_all()
+#     User.query.delete()
+#     db.session.commit()
 
-    #Create a user
-    test_user = User(username='testuser')
-    test_user.set_password('testpass')
-    db.session.add(test_user)
-    db.session.commit()
+#     #Create a user
+#     test_user = User(username='testuser')
+#     test_user.set_password('testpass')
+#     db.session.add(test_user)
+#     db.session.commit()
 
 
 
@@ -68,18 +68,18 @@ class Item(db.Model):
     is_public = db.Column(db.Boolean, default=True)
 
 
-with app.app_context():
-    db.create_all()
-    Item.query.delete()
-    db.session.commit()
+# with app.app_context():
+#     db.create_all()
+#     Item.query.delete()
+#     db.session.commit()
 
-    sample_items = [
-        Item(name="Pierce", description="math major"),
-        Item(name="Hermann", description="english major"),
-        Item(name="Nikos", description="biology major"),
-    ]
-    db.session.add_all(sample_items)
-    db.session.commit()
+#     sample_items = [
+#         Item(name="Pierce", description="math major"),
+#         Item(name="Hermann", description="english major"),
+#         Item(name="Nikos", description="biology major"),
+#     ]
+#     db.session.add_all(sample_items)
+#     db.session.commit()
 
 # --- Task 2: Error Handling ---
 
@@ -248,6 +248,83 @@ def get_public_items():
     ]
     return jsonify(items_list)
 
+# --- TASK 6 ---
+
+# GET - Get specific item by ID
+@app.route("/items/<int:item_id>", methods=["GET"])
+def get_item(item_id):
+    item = Item.query.get_or_404(item_id)
+    return jsonify({
+        "id": item.id,
+        "name": item.name,
+        "description": item.description,
+        "is_public": item.is_public
+    })
+
+# POST - Create new item
+@app.route("/items", methods=["POST"])
+def create_item():
+    data = request.get_json()
+    
+    if not data or not data.get("name") or not data.get("description"):
+        return jsonify({"error": "Name and description are required"}), 400
+    
+    new_item = Item(
+        name=data["name"],
+        description=data["description"],
+        is_public=data.get("is_public", True)
+    )
+    
+    try:
+        db.session.add(new_item)
+        db.session.commit()
+        return jsonify({
+            "id": new_item.id,
+            "name": new_item.name,
+            "description": new_item.description,
+            "is_public": new_item.is_public
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# PUT - Update existing item
+@app.route("/items/<int:item_id>", methods=["PUT"])
+def update_item(item_id):
+    item = Item.query.get_or_404(item_id)
+    data = request.get_json()
+    
+    if "name" in data:
+        item.name = data["name"]
+    if "description" in data:
+        item.description = data["description"]
+    if "is_public" in data:
+        item.is_public = data["is_public"]
+    
+    try:
+        db.session.commit()
+        return jsonify({
+            "id": item.id,
+            "name": item.name,
+            "description": item.description,
+            "is_public": item.is_public
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# DELETE - Delete item
+@app.route("/items/<int:item_id>", methods=["DELETE"])
+def delete_item(item_id):
+    item = Item.query.get_or_404(item_id)
+    
+    try:
+        db.session.delete(item)
+        db.session.commit()
+        return jsonify({"message": "Item deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
